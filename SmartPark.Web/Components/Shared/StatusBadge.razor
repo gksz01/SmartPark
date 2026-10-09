@@ -1,0 +1,19 @@
+<BbBadge Variant="@_rotulo.Variante">@_rotulo.Texto</BbBadge>
+
+@code {
+    /// <summary>Reserva, Pagamento ou Vaga.</summary>
+    [Parameter, EditorRequired]
+    public string Tipo { get; set; } = string.Empty;
+
+    [Parameter]
+    public string? Status { get; set; }
+
+    private (BadgeVariant Variante, string Texto) _rotulo;
+
+    protected override void OnParametersSet() => _rotulo = Tipo switch
+    {
+        "Reserva" => Rotulos.StatusReserva(Status),
+        "Pagamento" => Rotulos.StatusPagamento(Status),
+        _ => Rotulos.StatusVaga(Status)
+    };
+}

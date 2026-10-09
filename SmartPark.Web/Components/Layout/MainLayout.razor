@@ -1,0 +1,113 @@
+@inherits LayoutComponentBase
+@inject SessaoAuthenticationStateProvider Autenticacao
+
+<AuthorizeView>
+    <Authorized>
+        <BbSidebarProvider DefaultOpen="true">
+            <BbSidebar>
+                <BbSidebarHeader>
+                    <BbSidebarHeaderContent>
+                        <div class="sp-logo"><LucideIcon Name="square-parking" /></div>
+                        <BbSidebarHeaderInfo>
+                            <span class="sp-logo-nome">SmartPark</span>
+                            <span class="sp-logo-sub">@Rotulos.Perfil(context.User)</span>
+                        </BbSidebarHeaderInfo>
+                    </BbSidebarHeaderContent>
+                </BbSidebarHeader>
+
+                <BbSidebarContent>
+                    <AuthorizeView Roles="@Perfis.Motorista" Context="motorista">
+                        <BbSidebarGroup>
+                            <BbSidebarGroupLabel>Motorista</BbSidebarGroupLabel>
+                            <BbSidebarGroupContent>
+                                <BbSidebarMenu>
+                                    <BbSidebarMenuItem>
+                                        <BbSidebarMenuButton Href="/estacionamentos" Tooltip="Estacionamentos">
+                                            <LucideIcon Name="map-pin" />
+                                            <span>Estacionamentos</span>
+                                        </BbSidebarMenuButton>
+                                    </BbSidebarMenuItem>
+                                    <BbSidebarMenuItem>
+                                        <BbSidebarMenuButton Href="/reservas" Tooltip="Minhas reservas">
+                                            <LucideIcon Name="calendar-check" />
+                                            <span>Minhas reservas</span>
+                                        </BbSidebarMenuButton>
+                                    </BbSidebarMenuItem>
+                                    <BbSidebarMenuItem>
+                                        <BbSidebarMenuButton Href="/veiculos" Tooltip="Meus veículos">
+                                            <LucideIcon Name="car" />
+                                            <span>Meus veículos</span>
+                                        </BbSidebarMenuButton>
+                                    </BbSidebarMenuItem>
+                                </BbSidebarMenu>
+                            </BbSidebarGroupContent>
+                        </BbSidebarGroup>
+                    </AuthorizeView>
+
+                    <AuthorizeView Roles="@Perfis.Administrador" Context="administrador">
+                        <BbSidebarGroup>
+                            <BbSidebarGroupLabel>Administração</BbSidebarGroupLabel>
+                            <BbSidebarGroupContent>
+                                <BbSidebarMenu>
+                                    <BbSidebarMenuItem>
+                                        <BbSidebarMenuButton Href="/admin/estacionamentos" Tooltip="Estacionamentos e vagas">
+                                            <LucideIcon Name="building-2" />
+                                            <span>Estacionamentos e vagas</span>
+                                        </BbSidebarMenuButton>
+                                    </BbSidebarMenuItem>
+                                    <BbSidebarMenuItem>
+                                        <BbSidebarMenuButton Href="/admin/usuarios" Tooltip="Usuários operacionais">
+                                            <LucideIcon Name="users" />
+                                            <span>Usuários operacionais</span>
+                                        </BbSidebarMenuButton>
+                                    </BbSidebarMenuItem>
+                                </BbSidebarMenu>
+                            </BbSidebarGroupContent>
+                        </BbSidebarGroup>
+                    </AuthorizeView>
+                </BbSidebarContent>
+
+                <BbSidebarFooter>
+                    <BbSidebarMenu>
+                        <BbSidebarMenuItem>
+                            <BbSidebarMenuButton OnClick="SairAsync" Tooltip="Sair">
+                                <LucideIcon Name="log-out" />
+                                <span>Sair · @context.User.Identity?.Name</span>
+                            </BbSidebarMenuButton>
+                        </BbSidebarMenuItem>
+                    </BbSidebarMenu>
+                </BbSidebarFooter>
+                <BbSidebarRail />
+            </BbSidebar>
+
+            <BbSidebarInset>
+                <header class="sp-topo">
+                    <BbSidebarTrigger />
+                    <span class="sp-topo-titulo">Estacionamento inteligente</span>
+                    <div class="sp-topo-acoes">
+                        <BbDarkModeToggle />
+                    </div>
+                </header>
+                <div class="sp-conteudo">
+                    @Body
+                </div>
+            </BbSidebarInset>
+        </BbSidebarProvider>
+    </Authorized>
+    <NotAuthorized>
+        <RedirecionarLogin />
+    </NotAuthorized>
+    <Authorizing>
+        <div class="sp-centro"><BbSpinner Size="SpinnerSize.Large" /></div>
+    </Authorizing>
+</AuthorizeView>
+
+<div id="blazor-error-ui" data-nosnippet>
+    Ocorreu um erro inesperado.
+    <a href="." class="reload">Recarregar</a>
+    <span class="dismiss">🗙</span>
+</div>
+
+@code {
+    private Task SairAsync() => Autenticacao.SairAsync();
+}

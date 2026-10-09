@@ -1,0 +1,200 @@
+@page "/reservas"
+@using SmartPark.Contracts.Pagamentos
+@using SmartPark.Contracts.Reservas
+@inject ReservasApi Api
+@inject FusoHorario Fuso
+@inject ToastService Toast
+@inject DialogService Dialogos
+
+<PageTitle>Minhas reservas · SmartPark</PageTitle>
+
+<PaginaProtegida Roles="@Perfis.Motorista">
+    <Cabecalho Titulo="Minhas reservas" Descricao="A saída automática só é liberada com o pagamento confirmado.">
+        <Acoes>
+            <BbButton Href="/estacionamentos">
+                <Icon><LucideIcon Name="plus" /></Icon>
+                <ChildContent>Nova reserva</ChildContent>
+            </BbButton>
+        </Acoes>
+    </Cabecalho>
+
+    @if (_reservas is null)
+    {
+        <div class="sp-centro"><BbSpinner /></div>
+    }
+    else if (_reservas.Count == 0)
+    {
+        <BbEmpty Title="Você ainda não tem reservas" Description="Encontre um estacionamento e reserve seu período.">
+            <Icon><LucideIcon Name="calendar-x" /></Icon>
+            <ChildContent><BbButton Href="/estacionamentos">Buscar estacionamentos</BbButton></ChildContent>
+        </BbEmpty>
+    }
+    else
+    {
+        <BbDataTable TData="ReservaResponse" Data="_reservas" InitialPageSize="10" ShowToolbar="false">
+            <Columns>
+                <BbDataTableColumn TData="ReservaResponse" TValue="string" Header="Estacionamento" Property="@(r => r.EstacionamentoNome)" Sortable="true" />
+                <BbDataTableColumn TData="ReservaResponse" TValue="string" Header="Placa" Property="@(r => r.Placa)" />
+                <BbDataTableColumn TData="ReservaResponse" TValue="DateTimeOffset" Header="Período" Property="@(r => r.Inicio)" Sortable="true">
+                    <CellTemplate Context="reserva">
+                        <div>@Fuso.Formatar(reserva.Inicio)</div>
+                        <div class="sp-muted">até @Fuso.Formatar(reserva.Fim)</div>
+                    </CellTemplate>
+                </BbDataTableColumn>
+                <BbDataTableColumn TData="ReservaResponse" TValue="decimal" Header="Valor" Property="@(r => r.ValorEstimado)">
+                    <CellTemplate Context="reserva">@Formatos.Moeda(reserva.ValorEstimado)</CellTemplate>
+                </BbDataTableColumn>
+                <BbDataTableColumn TData="ReservaResponse" TValue="string" Header="Reserva" Property="@(r => r.Status)">
+                    <CellTemplate Context="reserva"><StatusBadge Tipo="Reserva" Status="@reserva.Status" /></CellTemplate>
+                </BbDataTableColumn>
+                <BbDataTableColumn TData="ReservaResponse" TValue="string" Header="Pagamento" Property="@(r => r.StatusPagamento)">
+                    <CellTemplate Context="reserva"><StatusBadge Tipo="Pagamento" Status="@reserva.StatusPagamento" /></CellTemplate>
+                </BbDataTableColumn>
+                <BbDataTableColumn TData="ReservaResponse" TValue="Guid" Id="acoes" Header="Ações" Property="@(r => r.Id)">
+                    <CellTemplate Context="reserva">
+                        <div class="sp-linha-fim">
+                            @if (PodePagar(reserva))
+                            {
+                                <BbButton Size="ButtonSize.Small" OnClick="() => AbrirPagamento(reserva)">Pagar</BbButton>
+                            }
+                            @if (PodeCancelar(reserva))
+                            {
+                                <BbButton Variant="ButtonVariant.Ghost" Size="ButtonSize.Small" OnClick="() => CancelarAsync(reserva)">Cancelar</BbButton>
+                            }
+                        </div>
+                    </CellTemplate>
+                </BbDataTableColumn>
+            </Columns>
+        </BbDataTable>
+    }
+
+    <BbDialog @bind-Open="_pagamentoAberto">
+        <BbDialogContent>
+            <BbDialogHeader>
+                <BbDialogTitle>Pagar reserva</BbDialogTitle>
+                <BbDialogDescription>
+                    @_pagando?.EstacionamentoNome · @(_pagando is null ? "" : Formatos.Moeda(_pagando.ValorEstimado))
+                </BbDialogDescription>
+            </BbDialogHeader>
+            <div class="sp-pilha">
+                <BbFormFieldSelect TValue="string" @bind-Value="_metodo" Label="Forma de pagamento" Options="_metodos" />
+                @if (_metodo == "Cartao")
+                {
+                    <BbFormFieldInput TValue="string" @bind-Value="_numeroCartao" Label="Número do cartão"
+                                      Placeholder="Somente números" UpdateTiming="UpdateTiming.Immediate"
+                                      HelperText="Ambiente de simulação: cartões terminados em 0000 são recusados." />
+                }
+                <BbDialogFooter>
+                    <BbButton Variant="ButtonVariant.Outline" OnClick="() => _pagamentoAberto = false">Cancelar</BbButton>
+                    <BbButton OnClick="PagarAsync" Loading="_processando" LoadingText="Processando...">Pagar</BbButton>
+                </BbDialogFooter>
+            </div>
+        </BbDialogContent>
+    </BbDialog>
+</PaginaProtegida>
+
+@code {
+    private static readonly List<SelectOption<string>> MetodosDisponiveis =
+    [
+        new("Pix", "Pix"),
+        new("Cartao", "Cartão de crédito")
+    ];
+
+    private List<ReservaResponse>? _reservas;
+    private readonly List<SelectOption<string>> _metodos = MetodosDisponiveis;
+
+    private ReservaResponse? _pagando;
+    private bool _pagamentoAberto;
+    private bool _processando;
+    private string? _metodo = "Pix";
+    private string? _numeroCartao;
+
+    protected override Task OnInitializedAsync() => CarregarAsync();
+
+    private async Task CarregarAsync()
+    {
+        var resultado = await Api.ListarAsync();
+        if (resultado.Sucesso)
+        {
+            _reservas = resultado.Valor;
+        }
+        else
+        {
+            _reservas = [];
+            Toast.Error(resultado.Erro!, "Não foi possível carregar as reservas");
+        }
+    }
+
+    private static bool PodePagar(ReservaResponse reserva) =>
+        reserva.Status == "Confirmada" && reserva.StatusPagamento is not ("Aprovado" or "Estornado");
+
+    private static bool PodeCancelar(ReservaResponse reserva) =>
+        reserva.Status == "Confirmada" && reserva.Inicio > DateTimeOffset.UtcNow;
+
+    private void AbrirPagamento(ReservaResponse reserva)
+    {
+        _pagando = reserva;
+        _metodo = "Pix";
+        _numeroCartao = null;
+        _pagamentoAberto = true;
+    }
+
+    private async Task PagarAsync()
+    {
+        if (_pagando is null || string.IsNullOrEmpty(_metodo))
+        {
+            return;
+        }
+
+        _processando = true;
+        var resultado = await Api.PagarAsync(_pagando.Id, new PagarReservaRequest(_metodo, _metodo == "Cartao" ? _numeroCartao : null));
+        _processando = false;
+
+        if (!resultado.Sucesso)
+        {
+            Toast.Error(resultado.Erro!, "Pagamento não processado");
+            return;
+        }
+
+        var pagamento = resultado.Valor!;
+        if (pagamento.Status == "Aprovado")
+        {
+            _pagamentoAberto = false;
+            Toast.Success($"{Formatos.Moeda(pagamento.Valor)} pagos. A saída será liberada automaticamente.", "Pagamento aprovado");
+        }
+        else
+        {
+            Toast.Error(pagamento.MotivoRecusa ?? "Pagamento não autorizado.", "Pagamento recusado");
+        }
+
+        await CarregarAsync();
+    }
+
+    private async Task CancelarAsync(ReservaResponse reserva)
+    {
+        var aviso = reserva.StatusPagamento == "Aprovado"
+            ? "O valor pago será estornado."
+            : "A capacidade reservada será liberada.";
+
+        var confirmacao = await Dialogos.ConfirmAsync(
+            "Cancelar reserva",
+            $"Cancelar a reserva em {reserva.EstacionamentoNome} para {Fuso.Formatar(reserva.Inicio)}? {aviso}",
+            new ConfirmDialogOptions { ConfirmText = "Cancelar reserva", CancelText = "Voltar", Destructive = true });
+
+        if (!confirmacao.Confirmed)
+        {
+            return;
+        }
+
+        var resultado = await Api.CancelarAsync(reserva.Id);
+        if (resultado.Sucesso)
+        {
+            Toast.Success(aviso, "Reserva cancelada");
+            await CarregarAsync();
+        }
+        else
+        {
+            Toast.Error(resultado.Erro!, "Reserva não cancelada");
+        }
+    }
+}

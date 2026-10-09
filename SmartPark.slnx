@@ -1,0 +1,14 @@
+<Solution>
+  <Project Path="SmartPark.Api/SmartPark.Api.csproj" />
+  <Project Path="SmartPark.AppHost/SmartPark.AppHost.csproj" />
+  <Project Path="SmartPark.Application/SmartPark.Application.csproj" />
+  <Project Path="SmartPark.ArchitectureTests/SmartPark.ArchitectureTests.csproj" />
+  <Project Path="SmartPark.Contracts/SmartPark.Contracts.csproj" />
+  <Project Path="SmartPark.Domain/SmartPark.Domain.csproj" />
+  <Project Path="SmartPark.Infrastructure/SmartPark.Infrastructure.csproj" />
+  <Project Path="SmartPark.Migrations.PostgreSql/SmartPark.Migrations.PostgreSql.csproj" />
+  <Project Path="SmartPark.Migrations.SqlServer/SmartPark.Migrations.SqlServer.csproj" />
+  <Project Path="SmartPark.MigrationService/SmartPark.MigrationService.csproj" />
+  <Project Path="SmartPark.ServiceDefaults/SmartPark.ServiceDefaults.csproj" />
+  <Project Path="SmartPark.Web/SmartPark.Web.csproj" />
+</Solution>

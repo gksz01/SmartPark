@@ -1,0 +1,163 @@
+@page "/veiculos"
+@using System.ComponentModel.DataAnnotations
+@using SmartPark.Contracts.Veiculos
+@inject VeiculosApi Api
+@inject ToastService Toast
+@inject DialogService Dialogos
+
+<PageTitle>Meus veículos · SmartPark</PageTitle>
+
+<PaginaProtegida Roles="@Perfis.Motorista">
+    <Cabecalho Titulo="Meus veículos" Descricao="A placa cadastrada é a que o leitor reconhece na entrada e na saída do estacionamento.">
+        <Acoes>
+            <BbButton OnClick="Novo">
+                <Icon><LucideIcon Name="plus" /></Icon>
+                <ChildContent>Novo veículo</ChildContent>
+            </BbButton>
+        </Acoes>
+    </Cabecalho>
+
+    @if (_veiculos is null)
+    {
+        <div class="sp-centro"><BbSpinner /></div>
+    }
+    else if (_veiculos.Count == 0)
+    {
+        <BbEmpty Title="Nenhum veículo cadastrado" Description="Cadastre ao menos um veículo para poder reservar.">
+            <Icon><LucideIcon Name="car" /></Icon>
+            <ChildContent><BbButton OnClick="Novo">Cadastrar veículo</BbButton></ChildContent>
+        </BbEmpty>
+    }
+    else
+    {
+        <BbDataTable TData="VeiculoResponse" Data="_veiculos" ShowToolbar="false" InitialPageSize="10">
+            <Columns>
+                <BbDataTableColumn TData="VeiculoResponse" TValue="string" Header="Placa" Property="@(v => v.Placa)" Sortable="true" />
+                <BbDataTableColumn TData="VeiculoResponse" TValue="string" Header="Modelo" Property="@(v => v.Modelo)" Sortable="true" />
+                <BbDataTableColumn TData="VeiculoResponse" TValue="Guid" Id="acoes" Header="Ações" Property="@(v => v.Id)">
+                    <CellTemplate Context="veiculo">
+                        <div class="sp-linha-fim">
+                            <BbButton Variant="ButtonVariant.Ghost" Size="ButtonSize.Small" OnClick="() => Editar(veiculo)">Editar</BbButton>
+                            <BbButton Variant="ButtonVariant.Ghost" Size="ButtonSize.Small" OnClick="() => RemoverAsync(veiculo)">Remover</BbButton>
+                        </div>
+                    </CellTemplate>
+                </BbDataTableColumn>
+            </Columns>
+        </BbDataTable>
+    }
+
+    <BbDialog @bind-Open="_dialogoAberto">
+        <BbDialogContent>
+            <BbDialogHeader>
+                <BbDialogTitle>@(_editando is null ? "Novo veículo" : "Editar veículo")</BbDialogTitle>
+                <BbDialogDescription>Placas no padrão antigo (ABC1234) ou Mercosul (ABC1D23).</BbDialogDescription>
+            </BbDialogHeader>
+            <EditForm Model="_form" OnValidSubmit="SalvarAsync">
+                <DataAnnotationsValidator />
+                <div class="sp-pilha">
+                    <BbFormFieldInput TValue="string" @bind-Value="_form.Placa" Label="Placa" Placeholder="ABC1D23" UpdateTiming="UpdateTiming.Immediate" />
+                    <BbFormFieldInput TValue="string" @bind-Value="_form.Modelo" Label="Modelo" Placeholder="Ex.: Onix prata" UpdateTiming="UpdateTiming.Immediate" />
+                    <BbDialogFooter>
+                        <BbButton Variant="ButtonVariant.Outline" OnClick="() => _dialogoAberto = false">Cancelar</BbButton>
+                        <BbButton Type="ButtonType.Submit" Loading="_salvando" LoadingText="Salvando...">Salvar</BbButton>
+                    </BbDialogFooter>
+                </div>
+            </EditForm>
+        </BbDialogContent>
+    </BbDialog>
+</PaginaProtegida>
+
+@code {
+    private List<VeiculoResponse>? _veiculos;
+    private VeiculoForm _form = new();
+    private VeiculoResponse? _editando;
+    private bool _dialogoAberto;
+    private bool _salvando;
+
+    protected override Task OnInitializedAsync() => CarregarAsync();
+
+    private async Task CarregarAsync()
+    {
+        var resultado = await Api.ListarAsync();
+        if (resultado.Sucesso)
+        {
+            _veiculos = resultado.Valor;
+        }
+        else
+        {
+            _veiculos = [];
+            Toast.Error(resultado.Erro!, "Não foi possível carregar os veículos");
+        }
+    }
+
+    private void Novo()
+    {
+        _editando = null;
+        _form = new VeiculoForm();
+        _dialogoAberto = true;
+    }
+
+    private void Editar(VeiculoResponse veiculo)
+    {
+        _editando = veiculo;
+        _form = new VeiculoForm { Placa = veiculo.Placa, Modelo = veiculo.Modelo };
+        _dialogoAberto = true;
+    }
+
+    private async Task SalvarAsync()
+    {
+        _salvando = true;
+        var request = new VeiculoRequest(_form.Placa!, _form.Modelo!);
+
+        var resultado = _editando is null
+            ? await Api.CadastrarAsync(request)
+            : await Api.AtualizarAsync(_editando.Id, request);
+
+        _salvando = false;
+
+        if (!resultado.Sucesso)
+        {
+            Toast.Error(resultado.Erro!, "Veículo não salvo");
+            return;
+        }
+
+        _dialogoAberto = false;
+        Toast.Success($"Placa {resultado.Valor!.Placa} salva.", "Veículo salvo");
+        await CarregarAsync();
+    }
+
+    private async Task RemoverAsync(VeiculoResponse veiculo)
+    {
+        var confirmacao = await Dialogos.ConfirmAsync(
+            "Remover veículo",
+            $"Remover o veículo de placa {veiculo.Placa}? Veículos com reservas ativas não podem ser removidos.",
+            new ConfirmDialogOptions { ConfirmText = "Remover", CancelText = "Voltar", Destructive = true });
+
+        if (!confirmacao.Confirmed)
+        {
+            return;
+        }
+
+        var resultado = await Api.RemoverAsync(veiculo.Id);
+        if (resultado.Sucesso)
+        {
+            Toast.Success($"Placa {veiculo.Placa} removida.", "Veículo removido");
+            await CarregarAsync();
+        }
+        else
+        {
+            Toast.Error(resultado.Erro!, "Veículo não removido");
+        }
+    }
+
+    private sealed class VeiculoForm
+    {
+        [Required(ErrorMessage = "Informe a placa.")]
+        [RegularExpression("^[A-Za-z]{3}-?[0-9][A-Za-z0-9][0-9]{2}$", ErrorMessage = "Placa inválida. Use ABC1234 ou ABC1D23.")]
+        public string? Placa { get; set; }
+
+        [Required(ErrorMessage = "Informe o modelo.")]
+        [StringLength(100, ErrorMessage = "O modelo deve ter no máximo 100 caracteres.")]
+        public string? Modelo { get; set; }
+    }
+}

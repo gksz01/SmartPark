@@ -1,0 +1,43 @@
+@page "/"
+@inject NavigationManager Navegacao
+
+<PageTitle>SmartPark</PageTitle>
+
+@* Motorista e administrador são levados direto à área deles; o funcionário ainda não tem telas. *@
+<AuthorizeView Roles="@Perfis.Funcionario" Context="funcionario">
+    <Cabecalho Titulo="Olá!" Descricao="Área do funcionário / manobrista." />
+    <BbAlert Variant="AlertVariant.Info" AccentBorder>
+        <Icon><LucideIcon Name="info" /></Icon>
+        <ChildContent>
+            <BbAlertTitle>Operação assistida na próxima fase</BbAlertTitle>
+            <BbAlertDescription>
+                A consulta de veículo, reserva e pagamento e a liberação manual auditável de cancelas
+                (RF21–RF23) chegam junto com o controle de entrada e saída.
+            </BbAlertDescription>
+        </ChildContent>
+    </BbAlert>
+</AuthorizeView>
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState>? EstadoAutenticacao { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (EstadoAutenticacao is null)
+        {
+            return;
+        }
+
+        var usuario = (await EstadoAutenticacao).User;
+
+        if (usuario.IsInRole(Perfis.Administrador))
+        {
+            Navegacao.NavigateTo("/admin/estacionamentos", replace: true);
+        }
+        else if (usuario.IsInRole(Perfis.Motorista))
+        {
+            Navegacao.NavigateTo("/estacionamentos", replace: true);
+        }
+    }
+}

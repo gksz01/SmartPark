@@ -1,0 +1,21 @@
+<Project Sdk="Aspire.AppHost.Sdk/13.6.1">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <UserSecretsId>614ee24a-a967-4fa0-962e-e6330563112a</UserSecretsId>
+    <!-- Dashboard e DCP vêm dos pacotes NuGet (modo padrão do SDK), não do bundle do Aspire CLI. -->
+    <MSBuildWarningsAsMessages>$(MSBuildWarningsAsMessages);ASPIRE010</MSBuildWarningsAsMessages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Aspire.Hosting.PostgreSQL" />
+    <PackageReference Include="Aspire.Hosting.SqlServer" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SmartPark.MigrationService\SmartPark.MigrationService.csproj" />
+    <ProjectReference Include="..\SmartPark.Api\SmartPark.Api.csproj" />
+    <ProjectReference Include="..\SmartPark.Web\SmartPark.Web.csproj" />
+  </ItemGroup>
+
+</Project>

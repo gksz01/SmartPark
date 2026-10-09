@@ -1,0 +1,21 @@
+@*
+    Restringe o conteúdo a perfis. A API valida de novo em toda chamada; aqui só se evita mostrar uma
+    tela que daria 403 em tudo.
+*@
+<AuthorizeView Roles="@Roles" Context="autorizacao">
+    <Authorized>@ChildContent</Authorized>
+    <NotAuthorized>
+        <BbEmpty Title="Acesso restrito" Description="Esta área não está disponível para o seu perfil.">
+            <Icon><LucideIcon Name="lock" /></Icon>
+        </BbEmpty>
+    </NotAuthorized>
+</AuthorizeView>
+
+@code {
+    /// <summary>Perfis aceitos, separados por vírgula.</summary>
+    [Parameter, EditorRequired]
+    public string Roles { get; set; } = string.Empty;
+
+    [Parameter]
+    public RenderFragment? ChildContent { get; set; }
+}

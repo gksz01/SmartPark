@@ -1,0 +1,24 @@
+<div class="sp-cabecalho">
+    <div>
+        <h1>@Titulo</h1>
+        @if (!string.IsNullOrEmpty(Descricao))
+        {
+            <p>@Descricao</p>
+        }
+    </div>
+    @if (Acoes is not null)
+    {
+        <div class="sp-linha">@Acoes</div>
+    }
+</div>
+
+@code {
+    [Parameter, EditorRequired]
+    public string Titulo { get; set; } = string.Empty;
+
+    [Parameter]
+    public string? Descricao { get; set; }
+
+    [Parameter]
+    public RenderFragment? Acoes { get; set; }
+}

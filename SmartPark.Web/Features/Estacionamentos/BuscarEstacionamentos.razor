@@ -1,0 +1,103 @@
+@page "/estacionamentos"
+@using SmartPark.Contracts.Estacionamentos
+@inject EstacionamentosApi Api
+@inject Geolocalizacao Geolocalizacao
+@inject ToastService Toast
+
+<PageTitle>Estacionamentos · SmartPark</PageTitle>
+
+<PaginaProtegida Roles="@($"{Perfis.Motorista},{Perfis.Administrador}")">
+    <Cabecalho Titulo="Encontre um estacionamento"
+               Descricao="Reserve capacidade para o período desejado; ao chegar, estacione em qualquer vaga livre." />
+
+    <div class="sp-linha" style="margin-bottom: 1.25rem">
+        <div class="sp-busca">
+            <BbInput Value="@_busca" ValueChanged="BuscarAsync" Type="InputType.Search"
+                     Placeholder="Buscar por nome ou endereço" UpdateTiming="UpdateTiming.Debounced" DebounceInterval="400" />
+        </div>
+        <BbButton Variant="ButtonVariant.Outline" OnClick="UsarLocalizacaoAsync" Loading="_localizando" LoadingText="Localizando...">
+            <Icon><LucideIcon Name="locate" /></Icon>
+            <ChildContent>@(_posicao is null ? "Usar minha localização" : "Atualizar localização")</ChildContent>
+        </BbButton>
+    </div>
+
+    @if (_estacionamentos is null)
+    {
+        <div class="sp-centro"><BbSpinner /></div>
+    }
+    else if (_estacionamentos.Count == 0)
+    {
+        <BbEmpty Title="Nenhum estacionamento encontrado" Description="Tente outro termo de busca.">
+            <Icon><LucideIcon Name="search-x" /></Icon>
+        </BbEmpty>
+    }
+    else
+    {
+        <div class="sp-grade-cards">
+            @foreach (var estacionamento in _estacionamentos)
+            {
+                <BbCard @key="estacionamento.Id">
+                    <BbCardHeader>
+                        <BbCardTitle>@estacionamento.Nome</BbCardTitle>
+                        <BbCardDescription>@estacionamento.Endereco</BbCardDescription>
+                        @if (estacionamento.DistanciaKm is { } distancia)
+                        {
+                            <BbCardAction><BbBadge Variant="BadgeVariant.Secondary">@Formatos.Km(distancia)</BbBadge></BbCardAction>
+                        }
+                    </BbCardHeader>
+                    <BbCardContent>
+                        <div class="sp-dado"><span>Valor por hora</span><span>@Formatos.Moeda(estacionamento.ValorHora)</span></div>
+                        <div class="sp-dado"><span>Capacidade reservável</span><span>@estacionamento.CapacidadeReservavel de @estacionamento.CapacidadeTotal</span></div>
+                    </BbCardContent>
+                    <BbCardFooter>
+                        <BbButton Href="@($"/estacionamentos/{estacionamento.Id}")">Ver disponibilidade</BbButton>
+                    </BbCardFooter>
+                </BbCard>
+            }
+        </div>
+    }
+</PaginaProtegida>
+
+@code {
+    private List<EstacionamentoResponse>? _estacionamentos;
+    private string? _busca;
+    private Posicao? _posicao;
+    private bool _localizando;
+
+    protected override Task OnInitializedAsync() => CarregarAsync();
+
+    private async Task BuscarAsync(string? busca)
+    {
+        _busca = busca;
+        await CarregarAsync();
+    }
+
+    private async Task UsarLocalizacaoAsync()
+    {
+        _localizando = true;
+        _posicao = await Geolocalizacao.ObterAsync();
+        _localizando = false;
+
+        if (_posicao is null)
+        {
+            Toast.Warning("Permita o acesso à localização no navegador para ordenar por distância.", "Localização indisponível");
+            return;
+        }
+
+        await CarregarAsync();
+    }
+
+    private async Task CarregarAsync()
+    {
+        var resultado = await Api.ListarAsync(_busca, _posicao);
+        if (resultado.Sucesso)
+        {
+            _estacionamentos = resultado.Valor;
+        }
+        else
+        {
+            _estacionamentos = [];
+            Toast.Error(resultado.Erro!, "Não foi possível buscar estacionamentos");
+        }
+    }
+}

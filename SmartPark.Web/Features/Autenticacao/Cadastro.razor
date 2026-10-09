@@ -1,0 +1,85 @@
+@page "/cadastro"
+@layout AuthLayout
+@using System.ComponentModel.DataAnnotations
+@inject AutenticacaoApi Api
+@inject SessaoAuthenticationStateProvider Autenticacao
+@inject NavigationManager Navegacao
+
+<PageTitle>Criar conta · SmartPark</PageTitle>
+
+<BbCard Class="sp-auth-cartao">
+    <BbCardHeader>
+        <BbCardTitle>Criar conta de motorista</BbCardTitle>
+        <BbCardDescription>Depois do cadastro, inclua seu veículo para fazer reservas.</BbCardDescription>
+    </BbCardHeader>
+    <BbCardContent>
+        <EditForm Model="_modelo" OnValidSubmit="CadastrarAsync">
+            <DataAnnotationsValidator />
+            <div class="sp-pilha">
+                <BbFormFieldInput TValue="string" @bind-Value="_modelo.Nome" Label="Nome completo" UpdateTiming="UpdateTiming.Immediate" />
+                <BbFormFieldInput TValue="string" @bind-Value="_modelo.Email" Label="E-mail"
+                                  Type="InputType.Email" UpdateTiming="UpdateTiming.Immediate" />
+                <BbFormFieldInput TValue="string" @bind-Value="_modelo.Senha" Label="Senha"
+                                  Type="InputType.Password" UpdateTiming="UpdateTiming.Immediate"
+                                  HelperText="Mínimo de 8 caracteres, com maiúscula, minúscula e número." />
+                <BbFormFieldInput TValue="string" @bind-Value="_modelo.ConfirmacaoSenha" Label="Confirme a senha"
+                                  Type="InputType.Password" UpdateTiming="UpdateTiming.Immediate" />
+
+                @if (_erro is not null)
+                {
+                    <BbAlert Variant="AlertVariant.Danger">
+                        <BbAlertDescription>@_erro</BbAlertDescription>
+                    </BbAlert>
+                }
+
+                <BbButton Type="ButtonType.Submit" Loading="_enviando" LoadingText="Criando conta...">Criar conta</BbButton>
+            </div>
+        </EditForm>
+    </BbCardContent>
+    <BbCardFooter>
+        <span class="sp-muted">Já tem conta? <a href="/login">Entrar</a></span>
+    </BbCardFooter>
+</BbCard>
+
+@code {
+    private readonly CadastroForm _modelo = new();
+    private bool _enviando;
+    private string? _erro;
+
+    private async Task CadastrarAsync()
+    {
+        _enviando = true;
+        _erro = null;
+
+        var resultado = await Api.RegistrarAsync(new RegistrarMotoristaRequest(_modelo.Nome!, _modelo.Email!, _modelo.Senha!));
+
+        if (resultado.Sucesso)
+        {
+            await Autenticacao.EntrarAsync(resultado.Valor!);
+            Navegacao.NavigateTo("/veiculos", replace: true);
+            return;
+        }
+
+        _erro = resultado.Erro;
+        _enviando = false;
+    }
+
+    private sealed class CadastroForm
+    {
+        [Required(ErrorMessage = "Informe o nome.")]
+        [StringLength(150, ErrorMessage = "O nome deve ter no máximo 150 caracteres.")]
+        public string? Nome { get; set; }
+
+        [Required(ErrorMessage = "Informe o e-mail.")]
+        [EmailAddress(ErrorMessage = "Informe um e-mail válido.")]
+        public string? Email { get; set; }
+
+        [Required(ErrorMessage = "Informe a senha.")]
+        [MinLength(8, ErrorMessage = "A senha deve ter pelo menos 8 caracteres.")]
+        public string? Senha { get; set; }
+
+        [Required(ErrorMessage = "Confirme a senha.")]
+        [Compare(nameof(Senha), ErrorMessage = "As senhas não conferem.")]
+        public string? ConfirmacaoSenha { get; set; }
+    }
+}

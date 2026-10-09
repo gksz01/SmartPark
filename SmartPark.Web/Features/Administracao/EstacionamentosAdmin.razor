@@ -1,0 +1,231 @@
+@page "/admin/estacionamentos"
+@using System.ComponentModel.DataAnnotations
+@using SmartPark.Contracts.Estacionamentos
+@inject AdministracaoApi Api
+@inject ToastService Toast
+@inject DialogService Dialogos
+
+<PageTitle>Estacionamentos · Administração · SmartPark</PageTitle>
+
+<PaginaProtegida Roles="@Perfis.Administrador">
+    <Cabecalho Titulo="Estacionamentos" Descricao="Capacidade, valor por hora e vagas de cada estacionamento.">
+        <Acoes>
+            <BbButton OnClick="Novo">
+                <Icon><LucideIcon Name="plus" /></Icon>
+                <ChildContent>Novo estacionamento</ChildContent>
+            </BbButton>
+        </Acoes>
+    </Cabecalho>
+
+    @if (_estacionamentos is null)
+    {
+        <div class="sp-centro"><BbSpinner /></div>
+    }
+    else
+    {
+        <BbDataTable TData="EstacionamentoResponse" Data="_estacionamentos" InitialPageSize="10">
+            <Columns>
+                <BbDataTableColumn TData="EstacionamentoResponse" TValue="string" Header="Nome" Property="@(e => e.Nome)" Sortable="true" Filterable="true" />
+                <BbDataTableColumn TData="EstacionamentoResponse" TValue="string" Header="Endereço" Property="@(e => e.Endereco)" Filterable="true" />
+                <BbDataTableColumn TData="EstacionamentoResponse" TValue="int" Header="Capacidade" Property="@(e => e.CapacidadeTotal)" Sortable="true">
+                    <CellTemplate Context="estacionamento">
+                        @estacionamento.CapacidadeTotal <span class="sp-muted">(@estacionamento.CapacidadeReservavel reserváveis)</span>
+                    </CellTemplate>
+                </BbDataTableColumn>
+                <BbDataTableColumn TData="EstacionamentoResponse" TValue="int" Header="Vagas" Property="@(e => e.TotalVagas)" Sortable="true" />
+                <BbDataTableColumn TData="EstacionamentoResponse" TValue="decimal" Header="Valor/hora" Property="@(e => e.ValorHora)" Sortable="true">
+                    <CellTemplate Context="estacionamento">@Formatos.Moeda(estacionamento.ValorHora)</CellTemplate>
+                </BbDataTableColumn>
+                <BbDataTableColumn TData="EstacionamentoResponse" TValue="bool" Header="Situação" Property="@(e => e.Ativo)">
+                    <CellTemplate Context="estacionamento">
+                        <BbBadge Variant="@(estacionamento.Ativo ? BadgeVariant.SoftSuccess : BadgeVariant.Secondary)">
+                            @(estacionamento.Ativo ? "Ativo" : "Inativo")
+                        </BbBadge>
+                    </CellTemplate>
+                </BbDataTableColumn>
+                <BbDataTableColumn TData="EstacionamentoResponse" TValue="Guid" Id="acoes" Header="Ações" Property="@(e => e.Id)">
+                    <CellTemplate Context="estacionamento">
+                        <div class="sp-linha-fim">
+                            <BbButton Variant="ButtonVariant.Ghost" Size="ButtonSize.Small" Href="@($"/admin/estacionamentos/{estacionamento.Id}/vagas")">Vagas</BbButton>
+                            <BbButton Variant="ButtonVariant.Ghost" Size="ButtonSize.Small" OnClick="() => Editar(estacionamento)">Editar</BbButton>
+                            <BbButton Variant="ButtonVariant.Ghost" Size="ButtonSize.Small" OnClick="() => AlternarSituacaoAsync(estacionamento)">
+                                @(estacionamento.Ativo ? "Desativar" : "Ativar")
+                            </BbButton>
+                        </div>
+                    </CellTemplate>
+                </BbDataTableColumn>
+            </Columns>
+        </BbDataTable>
+    }
+
+    <BbDialog @bind-Open="_dialogoAberto">
+        <BbDialogContent>
+            <BbDialogHeader>
+                <BbDialogTitle>@(_editando is null ? "Novo estacionamento" : "Editar estacionamento")</BbDialogTitle>
+                <BbDialogDescription>A capacidade reservável é a parte da capacidade total aberta a reservas antecipadas.</BbDialogDescription>
+            </BbDialogHeader>
+            <EditForm Model="_form" OnValidSubmit="SalvarAsync">
+                <DataAnnotationsValidator />
+                <div class="sp-pilha">
+                    <BbFormFieldInput TValue="string" @bind-Value="_form.Nome" Label="Nome" UpdateTiming="UpdateTiming.Immediate" />
+                    <BbFormFieldInput TValue="string" @bind-Value="_form.Endereco" Label="Endereço" UpdateTiming="UpdateTiming.Immediate" />
+                    <div class="sp-grade-2">
+                        <BbFormFieldInput TValue="double?" @bind-Value="_form.Latitude" Label="Latitude" Placeholder="-25.4296" HelperText="Opcional" />
+                        <BbFormFieldInput TValue="double?" @bind-Value="_form.Longitude" Label="Longitude" Placeholder="-49.2713" HelperText="Opcional" />
+                    </div>
+                    <div class="sp-grade-2">
+                        <BbFormFieldNumericInput TValue="int" @bind-Value="_form.CapacidadeTotal" Label="Capacidade total" Min="1" ShowButtons="true" />
+                        <BbFormFieldNumericInput TValue="int" @bind-Value="_form.CapacidadeReservavel" Label="Capacidade reservável" Min="0" ShowButtons="true" />
+                    </div>
+                    <BbFormFieldNumericInput TValue="decimal" @bind-Value="_form.ValorHora" Label="Valor por hora (R$)" Min="0m" Step="0.50m" DecimalPlaces="2" />
+                    <BbDialogFooter>
+                        <BbButton Variant="ButtonVariant.Outline" OnClick="() => _dialogoAberto = false">Cancelar</BbButton>
+                        <BbButton Type="ButtonType.Submit" Loading="_salvando" LoadingText="Salvando...">Salvar</BbButton>
+                    </BbDialogFooter>
+                </div>
+            </EditForm>
+        </BbDialogContent>
+    </BbDialog>
+</PaginaProtegida>
+
+@code {
+    private List<EstacionamentoResponse>? _estacionamentos;
+    private EstacionamentoForm _form = new();
+    private EstacionamentoResponse? _editando;
+    private bool _dialogoAberto;
+    private bool _salvando;
+
+    protected override Task OnInitializedAsync() => CarregarAsync();
+
+    private async Task CarregarAsync()
+    {
+        var resultado = await Api.ListarEstacionamentosAsync();
+        if (resultado.Sucesso)
+        {
+            _estacionamentos = resultado.Valor;
+        }
+        else
+        {
+            _estacionamentos = [];
+            Toast.Error(resultado.Erro!, "Não foi possível carregar os estacionamentos");
+        }
+    }
+
+    private void Novo()
+    {
+        _editando = null;
+        _form = new EstacionamentoForm();
+        _dialogoAberto = true;
+    }
+
+    private void Editar(EstacionamentoResponse estacionamento)
+    {
+        _editando = estacionamento;
+        _form = new EstacionamentoForm
+        {
+            Nome = estacionamento.Nome,
+            Endereco = estacionamento.Endereco,
+            Latitude = estacionamento.Latitude,
+            Longitude = estacionamento.Longitude,
+            CapacidadeTotal = estacionamento.CapacidadeTotal,
+            CapacidadeReservavel = estacionamento.CapacidadeReservavel,
+            ValorHora = estacionamento.ValorHora
+        };
+        _dialogoAberto = true;
+    }
+
+    private async Task SalvarAsync()
+    {
+        _salvando = true;
+        var request = new EstacionamentoRequest(
+            _form.Nome!,
+            _form.Endereco!,
+            _form.Latitude,
+            _form.Longitude,
+            _form.CapacidadeTotal,
+            _form.CapacidadeReservavel,
+            _form.ValorHora);
+
+        var resultado = _editando is null
+            ? await Api.CriarEstacionamentoAsync(request)
+            : await Api.AtualizarEstacionamentoAsync(_editando.Id, request);
+
+        _salvando = false;
+
+        if (!resultado.Sucesso)
+        {
+            Toast.Error(resultado.Erro!, "Estacionamento não salvo");
+            return;
+        }
+
+        _dialogoAberto = false;
+        Toast.Success(resultado.Valor!.Nome, "Estacionamento salvo");
+        await CarregarAsync();
+    }
+
+    private async Task AlternarSituacaoAsync(EstacionamentoResponse estacionamento)
+    {
+        if (estacionamento.Ativo)
+        {
+            var confirmacao = await Dialogos.ConfirmAsync(
+                "Desativar estacionamento",
+                $"{estacionamento.Nome} deixará de aceitar novas reservas. As reservas existentes são mantidas.",
+                new ConfirmDialogOptions { ConfirmText = "Desativar", CancelText = "Voltar", Destructive = true });
+
+            if (!confirmacao.Confirmed)
+            {
+                return;
+            }
+        }
+
+        var resultado = await Api.AlterarSituacaoAsync(estacionamento.Id, !estacionamento.Ativo);
+        if (resultado.Sucesso)
+        {
+            Toast.Success(estacionamento.Nome, estacionamento.Ativo ? "Estacionamento desativado" : "Estacionamento ativado");
+            await CarregarAsync();
+        }
+        else
+        {
+            Toast.Error(resultado.Erro!, "Situação não alterada");
+        }
+    }
+
+    private sealed class EstacionamentoForm : IValidatableObject
+    {
+        [Required(ErrorMessage = "Informe o nome.")]
+        [StringLength(150, ErrorMessage = "O nome deve ter no máximo 150 caracteres.")]
+        public string? Nome { get; set; }
+
+        [Required(ErrorMessage = "Informe o endereço.")]
+        [StringLength(300, ErrorMessage = "O endereço deve ter no máximo 300 caracteres.")]
+        public string? Endereco { get; set; }
+
+        [Range(-90, 90, ErrorMessage = "A latitude deve estar entre -90 e 90.")]
+        public double? Latitude { get; set; }
+
+        [Range(-180, 180, ErrorMessage = "A longitude deve estar entre -180 e 180.")]
+        public double? Longitude { get; set; }
+
+        [Range(1, 10_000, ErrorMessage = "A capacidade total deve estar entre 1 e 10.000.")]
+        public int CapacidadeTotal { get; set; } = 10;
+
+        [Range(0, 10_000, ErrorMessage = "A capacidade reservável não pode ser negativa.")]
+        public int CapacidadeReservavel { get; set; } = 5;
+
+        [Range(typeof(decimal), "0", "10000", ErrorMessage = "O valor por hora deve estar entre 0 e 10.000.")]
+        public decimal ValorHora { get; set; } = 10m;
+
+        public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
+        {
+            if (CapacidadeReservavel > CapacidadeTotal)
+            {
+                yield return new ValidationResult("A capacidade reservável não pode ser maior que a total.", [nameof(CapacidadeReservavel)]);
+            }
+
+            if (Latitude.HasValue != Longitude.HasValue)
+            {
+                yield return new ValidationResult("Informe latitude e longitude juntas.", [nameof(Latitude), nameof(Longitude)]);
+            }
+        }
+    }
+}

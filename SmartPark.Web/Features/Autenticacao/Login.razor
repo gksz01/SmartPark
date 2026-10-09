@@ -1,0 +1,81 @@
+@page "/login"
+@layout AuthLayout
+@using System.ComponentModel.DataAnnotations
+@inject AutenticacaoApi Api
+@inject SessaoAuthenticationStateProvider Autenticacao
+@inject NavigationManager Navegacao
+
+<PageTitle>Entrar · SmartPark</PageTitle>
+
+<BbCard Class="sp-auth-cartao">
+    <BbCardHeader>
+        <BbCardTitle>Entrar</BbCardTitle>
+        <BbCardDescription>Consulte vagas, reserve e pague sem filas.</BbCardDescription>
+    </BbCardHeader>
+    <BbCardContent>
+        <EditForm Model="_modelo" OnValidSubmit="EntrarAsync">
+            <DataAnnotationsValidator />
+            <div class="sp-pilha">
+                <BbFormFieldInput TValue="string" @bind-Value="_modelo.Email" Label="E-mail"
+                                  Type="InputType.Email" Placeholder="voce@exemplo.com" UpdateTiming="UpdateTiming.Immediate" />
+                <BbFormFieldInput TValue="string" @bind-Value="_modelo.Senha" Label="Senha"
+                                  Type="InputType.Password" UpdateTiming="UpdateTiming.Immediate" />
+
+                @if (_erro is not null)
+                {
+                    <BbAlert Variant="AlertVariant.Danger">
+                        <BbAlertDescription>@_erro</BbAlertDescription>
+                    </BbAlert>
+                }
+
+                <BbButton Type="ButtonType.Submit" Loading="_enviando" LoadingText="Entrando...">Entrar</BbButton>
+            </div>
+        </EditForm>
+    </BbCardContent>
+    <BbCardFooter>
+        <span class="sp-muted">Ainda não tem conta? <a href="/cadastro">Cadastre-se</a></span>
+    </BbCardFooter>
+</BbCard>
+
+@code {
+    [SupplyParameterFromQuery(Name = "retorno")]
+    private string? Retorno { get; set; }
+
+    private readonly LoginForm _modelo = new();
+    private bool _enviando;
+    private string? _erro;
+
+    private async Task EntrarAsync()
+    {
+        _enviando = true;
+        _erro = null;
+
+        var resultado = await Api.LoginAsync(new LoginRequest(_modelo.Email!, _modelo.Senha!));
+
+        if (resultado.Sucesso)
+        {
+            await Autenticacao.EntrarAsync(resultado.Valor!);
+            Navegacao.NavigateTo(DestinoSeguro(Retorno), replace: true);
+            return;
+        }
+
+        _erro = resultado.Erro;
+        _enviando = false;
+    }
+
+    // Só aceita caminhos locais, para o parâmetro de retorno não virar redirecionamento aberto.
+    private static string DestinoSeguro(string? retorno) =>
+        retorno is { Length: > 1 } && retorno.StartsWith('/') && !retorno.StartsWith("//", StringComparison.Ordinal)
+            ? retorno
+            : "/";
+
+    private sealed class LoginForm
+    {
+        [Required(ErrorMessage = "Informe o e-mail.")]
+        [EmailAddress(ErrorMessage = "Informe um e-mail válido.")]
+        public string? Email { get; set; }
+
+        [Required(ErrorMessage = "Informe a senha.")]
+        public string? Senha { get; set; }
+    }
+}

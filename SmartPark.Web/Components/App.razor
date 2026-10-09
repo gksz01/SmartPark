@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+    <ResourcePreloader />
+    <link rel="stylesheet" href="@Assets["app.css"]" />
+    <link rel="stylesheet" href="_content/BlazorBlueprint.Components/blazorblueprint.css" />
+    <link rel="stylesheet" href="_content/BlazorBlueprint.Components/css/themes.css" />
+    <link rel="stylesheet" href="@Assets["SmartPark.Web.styles.css"]" />
+    <ImportMap />
+    <HeadOutlet @rendermode="Interativo" />
+    <script src="_content/BlazorBlueprint.Components/js/theme-init.js"></script>
+</head>
+
+<body>
+    <Routes @rendermode="Interativo" />
+    <ReconnectModal />
+    <script src="@Assets["_framework/blazor.web.js"]"></script>
+</body>
+
+</html>
+
+@code {
+    // Sem prerender: a sessão vive no armazenamento do navegador, que só existe depois que o circuito
+    // conecta. Com prerender, toda página protegida seria renderizada primeiro como "não autenticada".
+    private static readonly IComponentRenderMode Interativo = new InteractiveServerRenderMode(prerender: false);
+}

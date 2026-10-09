@@ -1,0 +1,248 @@
+@page "/estacionamentos/{EstacionamentoId:guid}"
+@using SmartPark.Contracts.Estacionamentos
+@using SmartPark.Contracts.Reservas
+@using SmartPark.Contracts.Veiculos
+@using SmartPark.Web.Features.Reservas
+@using SmartPark.Web.Features.Veiculos
+@inject EstacionamentosApi Api
+@inject VeiculosApi VeiculosApi
+@inject ReservasApi ReservasApi
+@inject FusoHorario Fuso
+@inject ToastService Toast
+@inject NavigationManager Navegacao
+
+<PageTitle>@(_estacionamento?.Nome ?? "Estacionamento") · SmartPark</PageTitle>
+
+<PaginaProtegida Roles="@($"{Perfis.Motorista},{Perfis.Administrador}")">
+    @if (_carregando)
+    {
+        <div class="sp-centro"><BbSpinner /></div>
+    }
+    else if (_estacionamento is null)
+    {
+        <BbEmpty Title="Estacionamento não encontrado" Description="Ele pode ter sido desativado.">
+            <Icon><LucideIcon Name="map-pin-off" /></Icon>
+            <ChildContent><BbButton Href="/estacionamentos">Voltar à busca</BbButton></ChildContent>
+        </BbEmpty>
+    }
+    else
+    {
+        <Cabecalho Titulo="@_estacionamento.Nome" Descricao="@_estacionamento.Endereco">
+            <Acoes>
+                <BbButton Variant="ButtonVariant.Outline" Href="/estacionamentos">Voltar</BbButton>
+            </Acoes>
+        </Cabecalho>
+
+        <div class="sp-grade-detalhe">
+            <div class="sp-pilha">
+                <BbCard>
+                    <BbCardHeader>
+                        <BbCardTitle>Ocupação agora</BbCardTitle>
+                        <BbCardDescription>Situação física das vagas neste momento.</BbCardDescription>
+                    </BbCardHeader>
+                    <BbCardContent>
+                        @if (_ocupacao is not null)
+                        {
+                            <div class="sp-indicadores">
+                                <div class="sp-indicador">
+                                    <div class="sp-indicador-valor">@_ocupacao.Livres</div>
+                                    <div class="sp-indicador-rotulo">Livres</div>
+                                </div>
+                                <div class="sp-indicador">
+                                    <div class="sp-indicador-valor">@_ocupacao.Ocupadas</div>
+                                    <div class="sp-indicador-rotulo">Ocupadas</div>
+                                </div>
+                                <div class="sp-indicador">
+                                    <div class="sp-indicador-valor">@_ocupacao.Indisponiveis</div>
+                                    <div class="sp-indicador-rotulo">Indisponíveis</div>
+                                </div>
+                            </div>
+                        }
+                    </BbCardContent>
+                </BbCard>
+
+                <BbCard>
+                    <BbCardHeader><BbCardTitle>Informações</BbCardTitle></BbCardHeader>
+                    <BbCardContent>
+                        <div class="sp-dado"><span>Valor por hora</span><span>@Formatos.Moeda(_estacionamento.ValorHora)</span></div>
+                        <div class="sp-dado"><span>Capacidade total</span><span>@_estacionamento.CapacidadeTotal vagas</span></div>
+                        <div class="sp-dado"><span>Capacidade reservável</span><span>@_estacionamento.CapacidadeReservavel vagas</span></div>
+                        <div class="sp-dado"><span>Cobrança</span><span>Por hora iniciada</span></div>
+                    </BbCardContent>
+                </BbCard>
+            </div>
+
+            <BbCard>
+                <BbCardHeader>
+                    <BbCardTitle>Reservar</BbCardTitle>
+                    <BbCardDescription>Entre 30 minutos e 24 horas, com até 30 dias de antecedência.</BbCardDescription>
+                </BbCardHeader>
+                <BbCardContent>
+                    <AuthorizeView Roles="@Perfis.Motorista" Context="motorista">
+                        <Authorized>
+                            <div class="sp-pilha">
+                                @if (_veiculos.Count == 0)
+                                {
+                                    <BbAlert Variant="AlertVariant.Warning">
+                                        <BbAlertTitle>Nenhum veículo cadastrado</BbAlertTitle>
+                                        <BbAlertDescription>Cadastre um veículo em <a href="/veiculos">Meus veículos</a> para reservar.</BbAlertDescription>
+                                    </BbAlert>
+                                }
+                                else
+                                {
+                                    <BbFormFieldSelect TValue="Guid?" Value="_veiculoId" ValueChanged="AlterarVeiculo"
+                                                       Label="Veículo" Placeholder="Selecione o veículo" Options="_opcoesVeiculos" />
+                                }
+
+                                <div class="sp-grade-2">
+                                    <BbFormFieldDateTimePicker Value="_inicio" ValueChanged="AlterarInicio" Label="Início"
+                                                               TimeFormat="TimeFormat.Hour24" MinuteStep="15" DateTimeFormat="dd/MM/yyyy HH:mm"
+                                                               MinDate="Fuso.Agora.Date" />
+                                    <BbFormFieldDateTimePicker Value="_fim" ValueChanged="AlterarFim" Label="Fim"
+                                                               TimeFormat="TimeFormat.Hour24" MinuteStep="15" DateTimeFormat="dd/MM/yyyy HH:mm"
+                                                               MinDate="Fuso.Agora.Date" />
+                                </div>
+
+                                <BbButton Variant="ButtonVariant.Outline" OnClick="ConsultarAsync" Loading="_consultando" LoadingText="Consultando...">
+                                    Consultar disponibilidade
+                                </BbButton>
+
+                                @if (_disponibilidade is not null)
+                                {
+                                    <div class="sp-destaque">
+                                        <div class="sp-linha" style="justify-content: space-between">
+                                            <strong>
+                                                @(_disponibilidade.Disponivel > 0
+                                                    ? $"{_disponibilidade.Disponivel} de {_disponibilidade.CapacidadeReservavel} vagas reserváveis livres"
+                                                    : "Capacidade esgotada para o período")
+                                            </strong>
+                                            <BbBadge Variant="@(_disponibilidade.Disponivel > 0 ? BadgeVariant.SoftSuccess : BadgeVariant.SoftDestructive)">
+                                                @(_disponibilidade.Disponivel > 0 ? "Disponível" : "Esgotado")
+                                            </BbBadge>
+                                        </div>
+                                        <div class="sp-muted">Valor estimado: @Formatos.Moeda(_disponibilidade.ValorEstimado)</div>
+                                    </div>
+
+                                    <BbButton OnClick="ReservarAsync" Loading="_reservando" LoadingText="Reservando..."
+                                              Disabled="@(_disponibilidade.Disponivel <= 0 || _veiculoId is null)">
+                                        Confirmar reserva
+                                    </BbButton>
+                                }
+                            </div>
+                        </Authorized>
+                        <NotAuthorized>
+                            <p class="sp-muted">Reservas são feitas pelo perfil de motorista.</p>
+                        </NotAuthorized>
+                    </AuthorizeView>
+                </BbCardContent>
+            </BbCard>
+        </div>
+    }
+</PaginaProtegida>
+
+@code {
+    [Parameter]
+    public Guid EstacionamentoId { get; set; }
+
+    private EstacionamentoResponse? _estacionamento;
+    private OcupacaoResponse? _ocupacao;
+    private List<VeiculoResponse> _veiculos = [];
+    private List<SelectOption<Guid?>> _opcoesVeiculos = [];
+    private DisponibilidadeResponse? _disponibilidade;
+
+    private Guid? _veiculoId;
+    private DateTime? _inicio;
+    private DateTime? _fim;
+
+    private bool _carregando = true;
+    private bool _consultando;
+    private bool _reservando;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Próxima hora cheia, por duas horas.
+        var agora = Fuso.Agora;
+        _inicio = agora.Date.AddHours(agora.Hour + 1);
+        _fim = _inicio.Value.AddHours(2);
+
+        var estacionamento = Api.ObterAsync(EstacionamentoId);
+        var ocupacao = Api.OcupacaoAsync(EstacionamentoId);
+        var veiculos = VeiculosApi.ListarAsync();
+
+        _estacionamento = (await estacionamento).Valor;
+        _ocupacao = (await ocupacao).Valor;
+
+        // Administradores também abrem esta página, mas não têm veículos (a API devolve 403).
+        _veiculos = (await veiculos).Valor ?? [];
+        _opcoesVeiculos = [.. _veiculos.Select(v => new SelectOption<Guid?>(v.Id, $"{v.Placa} · {v.Modelo}"))];
+        _veiculoId = _veiculos.Count == 1 ? _veiculos[0].Id : null;
+
+        _carregando = false;
+    }
+
+    private void AlterarVeiculo(Guid? veiculoId) => _veiculoId = veiculoId;
+
+    private void AlterarInicio(DateTime? inicio)
+    {
+        _inicio = inicio;
+        _disponibilidade = null;
+    }
+
+    private void AlterarFim(DateTime? fim)
+    {
+        _fim = fim;
+        _disponibilidade = null;
+    }
+
+    private async Task ConsultarAsync()
+    {
+        if (_inicio is null || _fim is null)
+        {
+            Toast.Warning("Informe início e fim da reserva.", "Período incompleto");
+            return;
+        }
+
+        _consultando = true;
+        var resultado = await Api.DisponibilidadeAsync(EstacionamentoId, Fuso.ParaInstante(_inicio.Value), Fuso.ParaInstante(_fim.Value));
+        _consultando = false;
+
+        if (resultado.Sucesso)
+        {
+            _disponibilidade = resultado.Valor;
+        }
+        else
+        {
+            _disponibilidade = null;
+            Toast.Error(resultado.Erro!, "Período inválido");
+        }
+    }
+
+    private async Task ReservarAsync()
+    {
+        if (_veiculoId is null || _inicio is null || _fim is null)
+        {
+            Toast.Warning("Selecione o veículo e o período.", "Dados incompletos");
+            return;
+        }
+
+        _reservando = true;
+        var resultado = await ReservasApi.CriarAsync(new CriarReservaRequest(
+            EstacionamentoId,
+            _veiculoId.Value,
+            Fuso.ParaInstante(_inicio.Value),
+            Fuso.ParaInstante(_fim.Value)));
+        _reservando = false;
+
+        if (resultado.Sucesso)
+        {
+            Toast.Success($"Valor estimado {Formatos.Moeda(resultado.Valor!.ValorEstimado)}. Você pode pagar agora em Minhas reservas.", "Reserva confirmada");
+            Navegacao.NavigateTo("/reservas");
+            return;
+        }
+
+        Toast.Error(resultado.Erro!, "Reserva não confirmada");
+
+        // Outra pessoa pode ter levado a última vaga: atualiza a disponibilidade mostrada.
+        await ConsultarAsync();
+    }
+}

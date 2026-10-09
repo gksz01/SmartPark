@@ -1,0 +1,142 @@
+@page "/admin/usuarios"
+@using System.ComponentModel.DataAnnotations
+@using SmartPark.Contracts.Usuarios
+@inject AdministracaoApi Api
+@inject ToastService Toast
+
+<PageTitle>Usuários · Administração · SmartPark</PageTitle>
+
+<PaginaProtegida Roles="@Perfis.Administrador">
+    <Cabecalho Titulo="Usuários" Descricao="Motoristas se cadastram sozinhos; funcionários e administradores são criados aqui.">
+        <Acoes>
+            <BbButton OnClick="Novo">
+                <Icon><LucideIcon Name="user-plus" /></Icon>
+                <ChildContent>Novo usuário operacional</ChildContent>
+            </BbButton>
+        </Acoes>
+    </Cabecalho>
+
+    @if (_usuarios is null)
+    {
+        <div class="sp-centro"><BbSpinner /></div>
+    }
+    else
+    {
+        <BbDataTable TData="UsuarioResponse" Data="_usuarios" InitialPageSize="10">
+            <Columns>
+                <BbDataTableColumn TData="UsuarioResponse" TValue="string" Header="Nome" Property="@(u => u.Nome)" Sortable="true" Filterable="true" />
+                <BbDataTableColumn TData="UsuarioResponse" TValue="string" Header="E-mail" Property="@(u => u.Email)" Sortable="true" Filterable="true" />
+                <BbDataTableColumn TData="UsuarioResponse" TValue="string" Header="Perfil" Property="@(u => u.Perfil)" Sortable="true">
+                    <CellTemplate Context="usuario">
+                        <BbBadge Variant="@(usuario.Perfil == Perfis.Motorista ? BadgeVariant.Outline : BadgeVariant.Soft)">@RotuloPerfil(usuario.Perfil)</BbBadge>
+                    </CellTemplate>
+                </BbDataTableColumn>
+                <BbDataTableColumn TData="UsuarioResponse" TValue="bool" Header="Situação" Property="@(u => u.Ativo)">
+                    <CellTemplate Context="usuario">
+                        <BbBadge Variant="@(usuario.Ativo ? BadgeVariant.SoftSuccess : BadgeVariant.Secondary)">@(usuario.Ativo ? "Ativo" : "Inativo")</BbBadge>
+                    </CellTemplate>
+                </BbDataTableColumn>
+            </Columns>
+        </BbDataTable>
+    }
+
+    <BbDialog @bind-Open="_dialogoAberto">
+        <BbDialogContent>
+            <BbDialogHeader>
+                <BbDialogTitle>Novo usuário operacional</BbDialogTitle>
+                <BbDialogDescription>Funcionários/manobristas atendem exceções; administradores gerenciam a operação.</BbDialogDescription>
+            </BbDialogHeader>
+            <EditForm Model="_form" OnValidSubmit="SalvarAsync">
+                <DataAnnotationsValidator />
+                <div class="sp-pilha">
+                    <BbFormFieldInput TValue="string" @bind-Value="_form.Nome" Label="Nome" UpdateTiming="UpdateTiming.Immediate" />
+                    <BbFormFieldInput TValue="string" @bind-Value="_form.Email" Label="E-mail" Type="InputType.Email" UpdateTiming="UpdateTiming.Immediate" />
+                    <BbFormFieldInput TValue="string" @bind-Value="_form.Senha" Label="Senha inicial" Type="InputType.Password" UpdateTiming="UpdateTiming.Immediate"
+                                      HelperText="Mínimo de 8 caracteres, com maiúscula, minúscula e número." />
+                    <BbFormFieldSelect TValue="string" @bind-Value="_form.Perfil" Label="Perfil" Options="PerfisOperacionais" />
+                    <BbDialogFooter>
+                        <BbButton Variant="ButtonVariant.Outline" OnClick="() => _dialogoAberto = false">Cancelar</BbButton>
+                        <BbButton Type="ButtonType.Submit" Loading="_salvando" LoadingText="Salvando...">Criar usuário</BbButton>
+                    </BbDialogFooter>
+                </div>
+            </EditForm>
+        </BbDialogContent>
+    </BbDialog>
+</PaginaProtegida>
+
+@code {
+    private static readonly List<SelectOption<string>> PerfisOperacionais =
+    [
+        new(Perfis.Funcionario, "Funcionário / Manobrista"),
+        new(Perfis.Administrador, "Administrador")
+    ];
+
+    private List<UsuarioResponse>? _usuarios;
+    private UsuarioForm _form = new();
+    private bool _dialogoAberto;
+    private bool _salvando;
+
+    protected override Task OnInitializedAsync() => CarregarAsync();
+
+    private async Task CarregarAsync()
+    {
+        var resultado = await Api.ListarUsuariosAsync();
+        if (resultado.Sucesso)
+        {
+            _usuarios = resultado.Valor;
+        }
+        else
+        {
+            _usuarios = [];
+            Toast.Error(resultado.Erro!, "Não foi possível carregar os usuários");
+        }
+    }
+
+    private static string RotuloPerfil(string perfil) => perfil switch
+    {
+        Perfis.Funcionario => "Funcionário",
+        Perfis.Administrador => "Administrador",
+        _ => "Motorista"
+    };
+
+    private void Novo()
+    {
+        _form = new UsuarioForm();
+        _dialogoAberto = true;
+    }
+
+    private async Task SalvarAsync()
+    {
+        _salvando = true;
+        var resultado = await Api.CriarUsuarioAsync(new CriarUsuarioOperacionalRequest(_form.Nome!, _form.Email!, _form.Senha!, _form.Perfil!));
+        _salvando = false;
+
+        if (!resultado.Sucesso)
+        {
+            Toast.Error(resultado.Erro!, "Usuário não criado");
+            return;
+        }
+
+        _dialogoAberto = false;
+        Toast.Success($"{resultado.Valor!.Nome} ({RotuloPerfil(resultado.Valor.Perfil)})", "Usuário criado");
+        await CarregarAsync();
+    }
+
+    private sealed class UsuarioForm
+    {
+        [Required(ErrorMessage = "Informe o nome.")]
+        [StringLength(150, ErrorMessage = "O nome deve ter no máximo 150 caracteres.")]
+        public string? Nome { get; set; }
+
+        [Required(ErrorMessage = "Informe o e-mail.")]
+        [EmailAddress(ErrorMessage = "Informe um e-mail válido.")]
+        public string? Email { get; set; }
+
+        [Required(ErrorMessage = "Informe a senha inicial.")]
+        [MinLength(8, ErrorMessage = "A senha deve ter pelo menos 8 caracteres.")]
+        public string? Senha { get; set; }
+
+        [Required(ErrorMessage = "Selecione o perfil.")]
+        public string? Perfil { get; set; } = Perfis.Funcionario;
+    }
+}

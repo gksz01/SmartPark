@@ -1,0 +1,179 @@
+@page "/admin/estacionamentos/{EstacionamentoId:guid}/vagas"
+@using SmartPark.Contracts.Estacionamentos
+@using SmartPark.Contracts.Vagas
+@inject AdministracaoApi Api
+@inject ToastService Toast
+@inject DialogService Dialogos
+
+<PageTitle>Vagas · Administração · SmartPark</PageTitle>
+
+<PaginaProtegida Roles="@Perfis.Administrador">
+    <Cabecalho Titulo="@($"Vagas · {_estacionamento?.Nome}")"
+               Descricao="Nesta fase o status é alterado manualmente; os sensores de ocupação assumem na próxima fase.">
+        <Acoes>
+            <BbButton Variant="ButtonVariant.Outline" Href="/admin/estacionamentos">Voltar</BbButton>
+        </Acoes>
+    </Cabecalho>
+
+    @if (_vagas is null)
+    {
+        <div class="sp-centro"><BbSpinner /></div>
+    }
+    else
+    {
+        <div class="sp-pilha">
+            <div class="sp-indicadores">
+                <div class="sp-indicador">
+                    <div class="sp-indicador-valor">@_vagas.Count / @(_estacionamento?.CapacidadeTotal)</div>
+                    <div class="sp-indicador-rotulo">Vagas cadastradas</div>
+                </div>
+                <div class="sp-indicador">
+                    <div class="sp-indicador-valor">@_vagas.Count(v => v.Status == "Livre")</div>
+                    <div class="sp-indicador-rotulo">Livres</div>
+                </div>
+                <div class="sp-indicador">
+                    <div class="sp-indicador-valor">@_vagas.Count(v => v.Status == "Ocupada")</div>
+                    <div class="sp-indicador-rotulo">Ocupadas</div>
+                </div>
+                <div class="sp-indicador">
+                    <div class="sp-indicador-valor">@_vagas.Count(v => v.Status == "Indisponivel")</div>
+                    <div class="sp-indicador-rotulo">Indisponíveis</div>
+                </div>
+            </div>
+
+            <BbCard>
+                <BbCardHeader>
+                    <BbCardTitle>Adicionar vagas em lote</BbCardTitle>
+                    <BbCardDescription>Numeradas em sequência a partir do prefixo (ex.: A01, A02...).</BbCardDescription>
+                </BbCardHeader>
+                <BbCardContent>
+                    <div class="sp-grade-2" style="align-items: end">
+                        <BbFormFieldInput TValue="string" @bind-Value="_prefixo" Label="Prefixo" Placeholder="A" UpdateTiming="UpdateTiming.Immediate" />
+                        <BbFormFieldNumericInput TValue="int" @bind-Value="_quantidade" Label="Quantidade" Min="1" Max="500" ShowButtons="true" />
+                        <BbButton OnClick="AdicionarAsync" Loading="_adicionando" LoadingText="Adicionando...">Adicionar</BbButton>
+                    </div>
+                </BbCardContent>
+            </BbCard>
+
+            <BbDataTable TData="VagaResponse" Data="_vagas" InitialPageSize="20" PageSizes="[20, 50, 100]">
+                <Columns>
+                    <BbDataTableColumn TData="VagaResponse" TValue="string" Header="Vaga" Property="@(v => v.Identificador)" Sortable="true" Filterable="true" />
+                    <BbDataTableColumn TData="VagaResponse" TValue="string" Header="Status" Property="@(v => v.Status)" Sortable="true">
+                        <CellTemplate Context="vaga"><StatusBadge Tipo="Vaga" Status="@vaga.Status" /></CellTemplate>
+                    </BbDataTableColumn>
+                    <BbDataTableColumn TData="VagaResponse" TValue="Guid" Id="acoes" Header="Ações" Property="@(v => v.Id)">
+                        <CellTemplate Context="vaga">
+                            <div class="sp-linha-fim">
+                                @foreach (var (status, rotulo) in StatusDisponiveis)
+                                {
+                                    <BbButton Variant="ButtonVariant.Outline" Size="ButtonSize.Small" Disabled="@(vaga.Status == status)"
+                                              OnClick="() => AlterarStatusAsync(vaga, status)">@rotulo</BbButton>
+                                }
+                                <BbButton Variant="ButtonVariant.Ghost" Size="ButtonSize.Small" OnClick="() => RemoverAsync(vaga)">Remover</BbButton>
+                            </div>
+                        </CellTemplate>
+                    </BbDataTableColumn>
+                </Columns>
+            </BbDataTable>
+        </div>
+    }
+</PaginaProtegida>
+
+@code {
+    private static readonly (string Status, string Rotulo)[] StatusDisponiveis =
+    [
+        ("Livre", "Livre"),
+        ("Ocupada", "Ocupada"),
+        ("Indisponivel", "Indisponível")
+    ];
+
+    [Parameter]
+    public Guid EstacionamentoId { get; set; }
+
+    private EstacionamentoResponse? _estacionamento;
+    private List<VagaResponse>? _vagas;
+    private string? _prefixo = "A";
+    private int _quantidade = 10;
+    private bool _adicionando;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _estacionamento = (await Api.ObterEstacionamentoAsync(EstacionamentoId)).Valor;
+        await CarregarVagasAsync();
+    }
+
+    private async Task CarregarVagasAsync()
+    {
+        var resultado = await Api.ListarVagasAsync(EstacionamentoId);
+        if (resultado.Sucesso)
+        {
+            _vagas = resultado.Valor;
+        }
+        else
+        {
+            _vagas = [];
+            Toast.Error(resultado.Erro!, "Não foi possível carregar as vagas");
+        }
+    }
+
+    private async Task AdicionarAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_prefixo))
+        {
+            Toast.Warning("Informe o prefixo das vagas.", "Prefixo obrigatório");
+            return;
+        }
+
+        _adicionando = true;
+        var resultado = await Api.CriarVagasAsync(EstacionamentoId, new CriarVagasEmLoteRequest(_prefixo, _quantidade));
+        _adicionando = false;
+
+        if (resultado.Sucesso)
+        {
+            var criadas = resultado.Valor!;
+            Toast.Success($"{criadas.Count} vagas criadas ({criadas[0].Identificador} a {criadas[^1].Identificador}).", "Vagas adicionadas");
+            await CarregarVagasAsync();
+        }
+        else
+        {
+            Toast.Error(resultado.Erro!, "Vagas não adicionadas");
+        }
+    }
+
+    private async Task AlterarStatusAsync(VagaResponse vaga, string status)
+    {
+        var resultado = await Api.AtualizarStatusVagaAsync(EstacionamentoId, vaga.Id, status);
+        if (resultado.Sucesso)
+        {
+            await CarregarVagasAsync();
+        }
+        else
+        {
+            Toast.Error(resultado.Erro!, "Status não alterado");
+        }
+    }
+
+    private async Task RemoverAsync(VagaResponse vaga)
+    {
+        var confirmacao = await Dialogos.ConfirmAsync(
+            "Remover vaga",
+            $"Remover a vaga {vaga.Identificador}?",
+            new ConfirmDialogOptions { ConfirmText = "Remover", CancelText = "Voltar", Destructive = true });
+
+        if (!confirmacao.Confirmed)
+        {
+            return;
+        }
+
+        var resultado = await Api.RemoverVagaAsync(EstacionamentoId, vaga.Id);
+        if (resultado.Sucesso)
+        {
+            Toast.Success($"Vaga {vaga.Identificador} removida.", "Vaga removida");
+            await CarregarVagasAsync();
+        }
+        else
+        {
+            Toast.Error(resultado.Erro!, "Vaga não removida");
+        }
+    }
+}
